@@ -1,4 +1,4 @@
-# Information and codification (IC) - Project 2
+# Information and codification (IC) - Project 3
 
 ---
 

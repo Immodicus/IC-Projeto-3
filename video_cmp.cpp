@@ -12,7 +12,7 @@ int main(int argc, char** argv)
 {
     if(argc < 3)
     {
-        std::cerr << "Usage: video_cmp originalVideo compressedVideo";
+        std::cerr << "Usage: video_cmp originalVideo compressedVideo\n";
         return EXIT_FAILURE;
     }
 

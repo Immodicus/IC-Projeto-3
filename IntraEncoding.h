@@ -29,21 +29,35 @@ public:
         NONE = UINT8_MAX
     };
 
-    static void WritePredictor(const Predictor p, BitStream& bitstream)
+    static void WritePredictor(const Predictor lastPredictor, const Predictor p, BitStream& bitstream)
     {
-        bitstream.WriteBit((p >> 3) & 1);
-        bitstream.WriteBit((p >> 2) & 1); 
-        bitstream.WriteBit((p >> 1) & 1);    
-        bitstream.WriteBit(p & 1);   
+        if(p == lastPredictor)
+        {
+            bitstream.WriteBit(true);
+        }
+        else
+        {
+            bitstream.WriteBit(false);
+            bitstream.WriteBit((p >> 3) & 1);
+            bitstream.WriteBit((p >> 2) & 1); 
+            bitstream.WriteBit((p >> 1) & 1);    
+            bitstream.WriteBit(p & 1);   
+        }
     }
 
-    static Predictor ReadPredictor(BitStream& bitstream)
+    static Predictor ReadPredictor(const Predictor lastPredictor, BitStream& bitstream)
     {      
         bool b = true;
         bitstream.ReadBit(b);
 
+        if(b)
+        {
+            return lastPredictor;
+        }
+
         uint8_t t = 0;
 
+        bitstream.ReadBit(b);
         t = t | (b << 3);
         bitstream.ReadBit(b);
         t = t | (b << 2);
@@ -128,9 +142,11 @@ private:
         bitstream.WriteAlign(false);
         bitstream.Write(m);
 
+        Predictor lastPredictor = NONE;
         for(const auto p : predictors)
         {
-            WritePredictor(p, bitstream);
+            WritePredictor(lastPredictor, p, bitstream);
+            lastPredictor = p;
         }
 
         for(const auto r : residuals)
@@ -894,11 +910,11 @@ private:
         bitstream.ReadAlign();
         bitstream.Read(m);
 
-        //BitSet bs = bitstream.ReadNBits(ymacroBlocks * xmacroBlocks);
+        Predictor lastPredictor = NONE;
         std::vector<Predictor> predictors(ymacroBlocks * xmacroBlocks);
         for(uint64_t p = 0; p < ymacroBlocks * xmacroBlocks; p++)
         {
-            predictors[p] = ReadPredictor(bitstream);
+            predictors[p] = lastPredictor = ReadPredictor(lastPredictor, bitstream);
         }
 
         std::vector<int64_t> residuals = GolombCoder::Decode(bitstream, m, width * height);

@@ -29,6 +29,36 @@ public:
         NONE = UINT8_MAX
     };
 
+    static void LumaEncode(const cv::Mat& Y, BitStream& bitstream)
+    {
+        const constexpr uint64_t MODE = 4;
+
+        Encode(Y, bitstream, MODE);
+    }
+
+    static void ChromaEncode(const cv::Mat& Y, BitStream& bitstream)
+    {
+        const constexpr uint64_t MODE = 8;
+
+        Encode(Y, bitstream, MODE);
+    }
+
+    static cv::Mat LumaDecode(BitStream& bitstream, const YUV4MPEG2::YUV4MPEG2Description& desc)
+    {
+        const constexpr uint64_t MODE = 4;
+
+        return Decode(bitstream, desc.width, desc.height, MODE);
+    }
+
+    static cv::Mat ChromaDecode(BitStream& bitstream, const YUV4MPEG2::YUV4MPEG2Description& desc)
+    {
+        const constexpr uint64_t MODE = 8;
+
+        return Decode(bitstream, desc.width / 2, desc.height / 2, MODE);
+    }
+
+private:
+
     static void WritePredictor(const Predictor lastPredictor, const Predictor p, BitStream& bitstream)
     {
         if(p == lastPredictor)
@@ -69,35 +99,6 @@ public:
         return (Predictor)t;
     }
 
-    static void LuminanceEncode(const cv::Mat& Y, BitStream& bitstream)
-    {
-        const constexpr uint64_t MODE = 4;
-
-        Encode(Y, bitstream, MODE);
-    }
-
-    static void ChromaEncode(const cv::Mat& Y, BitStream& bitstream)
-    {
-        const constexpr uint64_t MODE = 8;
-
-        Encode(Y, bitstream, MODE);
-    }
-
-    static cv::Mat LuminanceDecode(BitStream& bitstream, const YUV4MPEG2::YUV4MPEG2Description& desc)
-    {
-        const constexpr uint64_t MODE = 4;
-
-        return Decode(bitstream, desc.width, desc.height, MODE);
-    }
-
-    static cv::Mat ChromaDecode(BitStream& bitstream, const YUV4MPEG2::YUV4MPEG2Description& desc)
-    {
-        const constexpr uint64_t MODE = 8;
-
-        return Decode(bitstream, desc.width / 2, desc.height / 2, MODE);
-    }
-
-private:
     static void Encode(const cv::Mat& Y, BitStream& bitstream, const uint64_t MODE)
     {     
         uint64_t ymacroBlocks = Y.rows / MODE;

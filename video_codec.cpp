@@ -57,7 +57,7 @@ int main(int argc, char** argv)
             // cv::imwrite("Cb.bmp", Cb);
             // cv::imwrite("Cr.bmp", Cr);
 
-            IntraEncoding::LuminanceEncode(Y, encoded);
+            IntraEncoding::LumaEncode(Y, encoded);
             IntraEncoding::ChromaEncode(Cb, encoded);
             IntraEncoding::ChromaEncode(Cr, encoded);
 
@@ -80,7 +80,7 @@ int main(int argc, char** argv)
 
         uint64_t frameCount = 0;
         cv::Mat Y;
-        while(!(Y = IntraEncoding::LuminanceDecode(encoded, desc)).empty())
+        while(!(Y = IntraEncoding::LumaDecode(encoded, desc)).empty())
         {         
             cv::Mat Cb = IntraEncoding::ChromaDecode(encoded, desc);
             cv::Mat Cr = IntraEncoding::ChromaDecode(encoded, desc);

@@ -83,7 +83,7 @@ public:
         fscanf(filePtr, "%5s", frameHeader.get());
         if(strcmp(frameHeader.get(), "FRAME")) return EOF;
 
-        char c;
+        char c = '\0';
         while(c != 0x0A) fread(&c, sizeof(char), 1, filePtr);
 
         // Read the Frame

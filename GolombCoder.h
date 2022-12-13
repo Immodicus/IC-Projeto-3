@@ -41,8 +41,9 @@ private:
         return static_cast<int64_t>(result);
     }
 
+public:
     template <typename T>
-    static int64_t EstimateInternal(const std::vector<T> &v, int64_t t, bool fold)
+    static int64_t ComputeRequiredBits(const std::vector<T> &v, int64_t t, bool fold)
     {
         uint64_t b = std::floor(log2(static_cast<double>(t)));
         uint64_t sum = 0;
@@ -58,7 +59,8 @@ private:
             uint64_t q = abs(e) / t;
             uint64_t r = abs(e) % t;
 
-            size_t s = q + 1 + 1;
+            size_t s = q + 1;
+            if(!fold) s++;
 
             if (r < pow(2, b + 1) - t)
             {
@@ -75,8 +77,6 @@ private:
         return sum;
     }
 
-
-public:
     template<typename T>
     static int64_t EstimateM(const std::vector<T>& v, int64_t range, int64_t div, bool fold = false)
     {
@@ -103,7 +103,7 @@ public:
             {
                 if(t <= 0) mins.push_back(UINT64_MAX);
                 
-                else mins.push_back(EstimateInternal(v, t, fold));
+                else mins.push_back(ComputeRequiredBits(v, t, fold));
             }
 
             for(size_t i = 0; i < mins.size(); i++)
@@ -142,7 +142,7 @@ public:
         {
             if(t <= 0) continue;
 
-            uint64_t e = EstimateInternal(v, t, fold); 
+            uint64_t e = ComputeRequiredBits(v, t, fold); 
             if(e < min)
             {
                 min = e;

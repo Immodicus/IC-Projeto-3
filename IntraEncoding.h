@@ -29,18 +29,50 @@ public:
         NONE = UINT8_MAX
     };
 
-    static void LumaEncode(const cv::Mat& Y, BitStream& bitstream)
+    struct Result
+    {
+        std::vector<Predictor> predictors;
+        std::vector<int16_t> residuals;
+        uint64_t totalDiff;
+        const uint64_t frameSize;
+
+        Result(uint64_t blockCount, uint64_t frameSize) : totalDiff(0), frameSize(frameSize)
+        {
+            residuals.resize(frameSize);
+
+            predictors.resize(blockCount);
+            predictors.clear();
+        }
+
+        uint64_t Estimate() const
+        {
+            uint64_t m = std::ceil(totalDiff / frameSize);
+            if(m == 0) m = 1;
+
+            return GolombCoder::ComputeRequiredBits(residuals, m, false) + sizeof(Predictor) * predictors.size() * 8;
+        }
+
+        uint64_t M() const
+        {
+            uint64_t m = std::ceil(totalDiff / frameSize);
+            if(m == 0) m = 1;
+
+            return m;
+        }
+    };
+
+    static Result LumaEncode(const cv::Mat& Y)
     {
         const constexpr uint64_t MODE = 4;
 
-        Encode(Y, bitstream, MODE);
+        return Encode(Y, MODE);
     }
 
-    static void ChromaEncode(const cv::Mat& Y, BitStream& bitstream)
+    static Result ChromaEncode(const cv::Mat& Y)
     {
         const constexpr uint64_t MODE = 8;
 
-        Encode(Y, bitstream, MODE);
+        return Encode(Y, MODE);
     }
 
     static cv::Mat LumaDecode(BitStream& bitstream, const YUV4MPEG2::YUV4MPEG2Description& desc)
@@ -56,6 +88,27 @@ public:
 
         return Decode(bitstream, desc.width / 2, desc.height / 2, MODE);
     }
+
+    static void Write(BitStream& bitstream, const Result& result)
+    {
+        uint16_t m = result.M();
+        if(m == 0) m = 1;
+        bitstream.WriteAlign(false);
+        bitstream.Write(m);
+
+        Predictor lastPredictor = NONE;
+        for(const auto p : result.predictors)
+        {
+            WritePredictor(lastPredictor, p, bitstream);
+            lastPredictor = p;
+        }
+
+        for(const auto r : result.residuals)
+        {
+            bitstream.WriteNBits(GolombCoder::Encode(r, m));
+        }
+    }
+
 
 private:
 
@@ -99,15 +152,12 @@ private:
         return (Predictor)t;
     }
 
-    static void Encode(const cv::Mat& Y, BitStream& bitstream, const uint64_t MODE)
+    static Result Encode(const cv::Mat& Y, const uint64_t MODE)
     {     
         uint64_t ymacroBlocks = Y.rows / MODE;
         uint64_t xmacroBlocks = Y.cols / MODE;
 
-        std::vector<int16_t> residuals(Y.rows * Y.cols);
-
-        std::vector<Predictor> predictors(ymacroBlocks * xmacroBlocks);
-        predictors.clear();
+        Result result(ymacroBlocks * xmacroBlocks, Y.rows * Y.cols);
 
         std::vector<int16_t> tmp(MODE * MODE);
 
@@ -119,41 +169,26 @@ private:
                 uint64_t min = UINT64_MAX;
                 Predictor p = NONE;
 
-                if(TestBest(x, y, ptr, min, Y, tmp, residuals, MODE, VerticalEncode)) p = Vertical;
-                if(TestBest(x, y, ptr, min, Y, tmp, residuals, MODE, HorizontalEncode)) p = Horizontal;
-                if(TestBest(x, y, ptr, min, Y, tmp, residuals, MODE, DCEncode)) p = DC;
+                if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, MODE, VerticalEncode)) p = Vertical;
+                if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, MODE, HorizontalEncode)) p = Horizontal;
+                if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, MODE, DCEncode)) p = DC;
 
                 if(MODE == 4)
                 {
-                    if(TestBest(x, y, xmacroBlocks, ptr, min, Y, tmp, residuals, DiagDownLeftEncode)) p = DiagDownLeft;
-                    if(TestBest(x, y, ptr, min, Y, tmp, residuals, DiagDownRightEncode)) p = DiagDownRight;
-                    if(TestBest(x, y, xmacroBlocks, ptr, min, Y, tmp, residuals, VerticalLeftEncode)) p = VerticalLeft;
-                    if(TestBest(x, y, ptr, min, Y, tmp, residuals, VerticalRightEncode)) p = VerticalRight;
-                    if(TestBest(x, y, ptr, min, Y, tmp, residuals, HorizontalDownEncode)) p = HorizontalDown;
-                    if(TestBest(x, y, ptr, min, Y, tmp, residuals, HorizontalUpEncode)) p = HorizontalUp;
+                    if(TestBest(x, y, xmacroBlocks, ptr, min, Y, tmp, result.residuals, DiagDownLeftEncode)) p = DiagDownLeft;
+                    if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, DiagDownRightEncode)) p = DiagDownRight;
+                    if(TestBest(x, y, xmacroBlocks, ptr, min, Y, tmp, result.residuals, VerticalLeftEncode)) p = VerticalLeft;
+                    if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, VerticalRightEncode)) p = VerticalRight;
+                    if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, HorizontalDownEncode)) p = HorizontalDown;
+                    if(TestBest(x, y, ptr, min, Y, tmp, result.residuals, HorizontalUpEncode)) p = HorizontalUp;
                 }
 
                 assert(p != NONE);
-                predictors.push_back(p);
+                result.predictors.push_back(p);
             }
         } 
 
-        uint8_t m = GolombCoder::EstimateMFast(residuals);
-        if(m == 0) m = 1;
-        bitstream.WriteAlign(false);
-        bitstream.Write(m);
-
-        Predictor lastPredictor = NONE;
-        for(const auto p : predictors)
-        {
-            WritePredictor(lastPredictor, p, bitstream);
-            lastPredictor = p;
-        }
-
-        for(const auto r : residuals)
-        {
-            bitstream.WriteNBits(GolombCoder::Encode(r, m));
-        }
+        return result;
     }
 
     inline static uint64_t VerticalEncode(uint64_t x, uint64_t y, const cv::Mat& Y, std::vector<int16_t>& tmp, const uint64_t MODE)
@@ -907,7 +942,7 @@ private:
         uint64_t ymacroBlocks = Y.rows / MODE;
         uint64_t xmacroBlocks = Y.cols / MODE;
 
-        uint8_t m = 0;
+        uint16_t m = 0;
         bitstream.ReadAlign();
         bitstream.Read(m);
 
@@ -1418,7 +1453,7 @@ private:
 
 
     template<typename F>
-    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& predictions, const uint64_t MODE, F func)
+    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& residuals, const uint64_t MODE, F func)
     {
         uint64_t diff = func(x, y, Y, tmp, MODE);
 
@@ -1428,7 +1463,7 @@ private:
             
             for(const auto r : tmp)
             {
-                predictions[ptr++] = r;
+                residuals[ptr++] = r;
             }
 
             return true;
@@ -1438,7 +1473,7 @@ private:
     }
 
     template<typename F>
-    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t xMax, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& predictions, F func)
+    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t xMax, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& residuals, F func)
     {
         constexpr const uint64_t MODE = 4;
         
@@ -1450,7 +1485,7 @@ private:
             
             for(const auto r : tmp)
             {
-                predictions[ptr++] = r;
+                residuals[ptr++] = r;
             }
 
             return true;
@@ -1460,7 +1495,7 @@ private:
     }
 
     template<typename F>
-    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& predictions, F func)
+    inline static bool TestBest(uint64_t x, uint64_t y, uint64_t ptr, uint64_t& min, const cv::Mat& Y, std::vector<int16_t>& tmp, std::vector<int16_t>& residuals, F func)
     {
         constexpr const uint64_t MODE = 4;
         
@@ -1472,7 +1507,7 @@ private:
             
             for(const auto r : tmp)
             {
-                predictions[ptr++] = r;
+                residuals[ptr++] = r;
             }
 
             return true;

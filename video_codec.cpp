@@ -12,6 +12,10 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
+typedef bool FRAME_TYPE;
+#define INTRA_FRAME true
+#define INTER_FRAME false
+
 #define VERBOSE(txt) if(verbose) std::cout << txt << '\n';
 
 int main(int argc, char** argv)
@@ -22,7 +26,7 @@ int main(int argc, char** argv)
         std::cerr << "\nOptional arguments: \n";
         std::cerr << "     -v : Verbose Mode (default off) \n";
         std::cerr << "     -d : Decode (default encode) \n";
-        std::cerr << "     -i : Only use intra-frame coding \n"; // not implemented
+        std::cerr << "     -i : Only use intra-frame coding \n";
         std::cerr << "     -bs : Block size in pixel (square matrix) to be used for motion compensation\n";
         std::cerr << "     -sa : Search area in pixels to be used for motion compensation\n";
         std::cerr << "     -kf : Key Frame Interval (in frames)\n";
@@ -97,52 +101,54 @@ int main(int argc, char** argv)
         BitStream encoded(argv[argc - 1], "w+");
 
         assert(encoded.Write(desc));
+        assert(encoded.Write(intra));
         assert(encoded.Write(blockSize));
         assert(encoded.Write(searchArea));
 
-        videoFile.ReadFrame(Y, Cb, Cr);
-        IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
-        IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
-        IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
-        IntraEncoding::Write(encoded, r1);
-        IntraEncoding::Write(encoded, r2);
-        IntraEncoding::Write(encoded, r3);
-        Y.copyTo(prevY);
-        Cb.copyTo(prevCb);
-        Cr.copyTo(prevCr);
-
-        uint64_t frameCount = 1;
+        uint64_t frameCount = 0;
         while(videoFile.ReadFrame(Y, Cb, Cr) != EOF)
         {           
-            IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
-            IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
-            IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
-
-            MotionCompensation::Result pr1 = MotionCompensation::Encode(prevY, Y, blockSize, searchArea);
-            MotionCompensation::Result pr2 = MotionCompensation::Encode(prevCb, Cb, blockSize, searchArea);
-            MotionCompensation::Result pr3 = MotionCompensation::Encode(prevCr, Cr, blockSize, searchArea);
-
-            int64_t interBits = INT64_MIN;
-            int64_t intraBits = INT64_MIN;
-            
-            interBits = pr1.Estimate() + pr2.Estimate() + pr3.Estimate();
-            intraBits = r1.Estimate() + r2.Estimate() + r3.Estimate();
-            
-            if(frameCount % keyFrameInterval == 0 || intraBits < interBits)
+            if(frameCount == 0 || intra)
             {
-                //std::cout << "Intra frame\n";
-                encoded.WriteBit(true);
+                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
+                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
+                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
                 IntraEncoding::Write(encoded, r1);
                 IntraEncoding::Write(encoded, r2);
                 IntraEncoding::Write(encoded, r3);
             }
             else
             {
-                //std::cout << "Inter frame\n";
-                encoded.WriteBit(false);
-                MotionCompensation::Write(pr1, encoded);
-                MotionCompensation::Write(pr2, encoded);
-                MotionCompensation::Write(pr3, encoded);
+                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
+                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
+                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
+
+                MotionCompensation::Result pr1 = MotionCompensation::Encode(prevY, Y, blockSize, searchArea);
+                MotionCompensation::Result pr2 = MotionCompensation::Encode(prevCb, Cb, blockSize, searchArea);
+                MotionCompensation::Result pr3 = MotionCompensation::Encode(prevCr, Cr, blockSize, searchArea);
+
+                int64_t interBits = INT64_MIN;
+                int64_t intraBits = INT64_MIN;
+                
+                interBits = pr1.Estimate() + pr2.Estimate() + pr3.Estimate();
+                intraBits = r1.Estimate() + r2.Estimate() + r3.Estimate();
+                
+                if(frameCount % keyFrameInterval == 0 || intraBits < interBits)
+                {
+                    //std::cout << "Intra frame\n";
+                    encoded.WriteBit(INTRA_FRAME);
+                    IntraEncoding::Write(encoded, r1);
+                    IntraEncoding::Write(encoded, r2);
+                    IntraEncoding::Write(encoded, r3);
+                }
+                else
+                {
+                    //std::cout << "Inter frame\n";
+                    encoded.WriteBit(INTER_FRAME);
+                    MotionCompensation::Write(pr1, encoded);
+                    MotionCompensation::Write(pr2, encoded);
+                    MotionCompensation::Write(pr3, encoded);
+                }
             }
 
             Y.copyTo(prevY);
@@ -160,6 +166,7 @@ int main(int argc, char** argv)
 
         YUV4MPEG2::YUV4MPEG2Description desc;
         assert(encoded.Read(desc));
+        assert(encoded.Read(intra));
         assert(encoded.Read(blockSize));
         assert(encoded.Read(searchArea));
 
@@ -177,18 +184,11 @@ int main(int argc, char** argv)
         cv::Mat prevCb;
         cv::Mat prevCr;
 
-        Y = IntraEncoding::LumaDecode(encoded, desc);
-        Cb = IntraEncoding::ChromaDecode(encoded, desc);
-        Cr = IntraEncoding::ChromaDecode(encoded, desc);
-        videoFile.WriteFrame(Y, Cb, Cr);
-        Y.copyTo(prevY);
-        Cb.copyTo(prevCb);
-        Cr.copyTo(prevCr);
-
-        bool intra = true;
-        while(encoded.ReadBit(intra))
-        {         
-            if(intra)
+        FRAME_TYPE frameType = INTRA_FRAME;
+        
+        do
+        {                     
+            if(frameType == INTRA_FRAME || frameCount == 0)
             {
                 Y = IntraEncoding::LumaDecode(encoded, desc);
                 if(Y.empty()) break;
@@ -202,10 +202,6 @@ int main(int argc, char** argv)
                 MotionCompensation::Decode(encoded, prevCr, Cr, blockSize);
             }
 
-            // cv::imwrite("Y2.bmp", Y);
-            // cv::imwrite("Cb2.bmp", Cb);
-            // cv::imwrite("Cr2.bmp", Cr);
-
             videoFile.WriteFrame(Y, Cb, Cr);
 
             Y.copyTo(prevY);
@@ -213,7 +209,9 @@ int main(int argc, char** argv)
             Cr.copyTo(prevCr);
 
             frameCount++;
+            if(!intra) encoded.ReadBit(frameType);
         }
+        while(true);
 
         VERBOSE("Decoded " << frameCount << " frames");
     }

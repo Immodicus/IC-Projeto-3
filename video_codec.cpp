@@ -7,6 +7,7 @@
 #include "YUV4MPEG2.h"
 #include "IntraEncoding.h"
 #include "MotionCompensation.h"
+#include "FrameQuantization.h"
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -30,6 +31,7 @@ int main(int argc, char** argv)
         std::cerr << "     -bs : Block size in pixel (square matrix) to be used for motion compensation\n";
         std::cerr << "     -sa : Search area in pixels to be used for motion compensation\n";
         std::cerr << "     -kf : Key Frame Interval (in frames)\n";
+        std::cerr << "     -q : Number of bits samples should be quantized to. Must be between 1 and 8\n";
         return EXIT_FAILURE;
     }
     
@@ -40,6 +42,7 @@ int main(int argc, char** argv)
     uint64_t blockSize = 16;
     uchar searchArea = 8;
     uint64_t keyFrameInterval = 16;
+    uint16_t nBits = 0;
 
     for(int n = 1; n < argc; n++)
 	{
@@ -72,6 +75,11 @@ int main(int argc, char** argv)
         {
             keyFrameInterval = atoi(argv[n+1]);
 		}
+
+        if(std::string(argv[n]) == "-q") 
+        {
+            nBits = atoi(argv[n+1]);
+		}
     }
 
     if(encode)
@@ -101,6 +109,7 @@ int main(int argc, char** argv)
         BitStream encoded(argv[argc - 1], "w+");
 
         assert(encoded.Write(desc));
+        assert(encoded.Write(nBits));
         assert(encoded.Write(intra));
         assert(encoded.Write(blockSize));
         assert(encoded.Write(searchArea));
@@ -108,6 +117,13 @@ int main(int argc, char** argv)
         uint64_t frameCount = 0;
         while(videoFile.ReadFrame(Y, Cb, Cr) != EOF)
         {           
+            if(nBits > 0)
+            {
+                FrameQuantization::Quantize(Y, nBits);
+                FrameQuantization::Quantize(Cb, nBits);
+                FrameQuantization::Quantize(Cr, nBits);
+            }
+            
             if(frameCount == 0 || intra)
             {
                 IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
@@ -166,6 +182,7 @@ int main(int argc, char** argv)
 
         YUV4MPEG2::YUV4MPEG2Description desc;
         assert(encoded.Read(desc));
+        assert(encoded.Read(nBits));
         assert(encoded.Read(intra));
         assert(encoded.Read(blockSize));
         assert(encoded.Read(searchArea));
@@ -202,11 +219,17 @@ int main(int argc, char** argv)
                 MotionCompensation::Decode(encoded, prevCr, Cr, blockSize);
             }
 
-            videoFile.WriteFrame(Y, Cb, Cr);
-
             Y.copyTo(prevY);
             Cb.copyTo(prevCb);
             Cr.copyTo(prevCr);
+
+            if(nBits > 0)
+            {
+                FrameQuantization::DeQuantize(Y, nBits);
+                FrameQuantization::DeQuantize(Cb, nBits);
+                FrameQuantization::DeQuantize(Cr, nBits);
+            }
+            videoFile.WriteFrame(Y, Cb, Cr);
 
             frameCount++;
             if(!intra) encoded.ReadBit(frameType);

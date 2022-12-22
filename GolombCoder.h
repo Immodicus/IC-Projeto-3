@@ -11,6 +11,8 @@
 
 #define BREAK_ALL(expr) if(expr) goto end;
 
+#define BREAK_ONE(expr) if(expr) return INT64_MIN
+
 class GolombCoder
 {
 private:
@@ -467,5 +469,45 @@ public:
 
     end:
         return decoded;
+    }
+
+    inline static int64_t DecodeOneFold(BitStream& bs, uint64_t m)
+    {
+        uint64_t b = std::floor(log2(static_cast<double>(m)));
+        
+        bool bit = false;
+
+        uint64_t q = 0;
+
+        for (; q < UINT64_MAX; q++)
+        {
+            BREAK_ONE(!bs.ReadBit(bit));
+            if (bit)
+                break;
+        }
+
+        uint64_t r = 0;
+
+        for (size_t i = 0; i < b; i++)
+        {
+            BREAK_ONE(!bs.ReadBit(bit));
+            SetBit(r, 63 - b + i + 1, bit);
+        }
+
+        if (r >= pow(2, b + 1) - m)
+        {
+            r <<= 1;
+            BREAK_ONE(!bs.ReadBit(bit));
+            SetBit(r, 63, bit);
+            r = r - pow(2, b + 1) + m;
+        }
+
+        int64_t res = q * m + r;
+        if (res % 2 == 1)
+            res = -(res / 2) - 1;
+        else
+            res = res / 2;
+
+        return res;
     }
 };

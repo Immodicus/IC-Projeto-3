@@ -161,11 +161,48 @@ public:
         }
     }
 
+    uint64_t GetFrameCount()
+    {
+        assert(mode == Read);
+        
+        uint64_t frameCount = 0;
+
+        uint64_t frameSize =    description.height * description.width + 
+                                2 * (description.height / 2 * description.width / 2);
+        
+        fseeko64(filePtr, begin, SEEK_SET);
+        
+        while(true)
+        {
+            assert(mode == Read);
+            
+            // Read Frame Header and ignore extra  parameters
+            std::unique_ptr<char[]> frameHeader = std::unique_ptr<char[]>(new char[6]());
+
+            fscanf(filePtr, "%5s", frameHeader.get());
+            if(strcmp(frameHeader.get(), "FRAME")) break;
+
+            char c = '\0';
+            while(c != 0x0A) fread(&c, sizeof(char), 1, filePtr);
+
+            // dummy read
+            fseeko64(filePtr, frameSize, SEEK_CUR);
+
+            frameCount++;
+        }
+
+        fseeko64(filePtr, begin, SEEK_SET);
+
+        return frameCount;
+    }
+
 private:
     Mode mode;
     const char* filename;
     FILE* filePtr;
     YUV4MPEG2Description description;
+
+    uint64_t begin;
 
     void InitRead()
     {
@@ -187,6 +224,8 @@ private:
         int color = fscanf(filePtr, "C%7s", cBuff.get());
 
         if(!color) std::cout << "File doesn't appear to specify a color mode. Assuming YCbCr 4:2:0\n";
+
+        begin = ftello64(filePtr);
     }
 
     void InitWrite()

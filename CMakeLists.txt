@@ -12,9 +12,6 @@ SET (CMAKE_CXX_FLAGS_DEBUG "-g3 -fsanitize=address")
 find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
-add_executable( video_intra video_intra.cpp )
-target_link_libraries( video_intra ${OpenCV_LIBS} )
-
 add_executable( video_cmp video_cmp.cpp )
 target_link_libraries( video_cmp ${OpenCV_LIBS} )
 

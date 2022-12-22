@@ -1,0 +1,24 @@
+name: Build Linux
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install OpenCV
+      run: sudo apt install -y libopencv-dev
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        make
+

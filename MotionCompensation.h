@@ -110,7 +110,7 @@ public:
         bitstream.WriteAlign(false);
         bitstream.Write(m);
 
-        for(const auto motVec : result.motionVectors)
+        for(const auto& motVec : result.motionVectors)
         {
             uchar x = motVec[0];
             uchar y = motVec[1];

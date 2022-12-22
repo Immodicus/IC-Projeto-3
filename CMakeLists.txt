@@ -18,5 +18,8 @@ target_link_libraries( video_intra ${OpenCV_LIBS} )
 add_executable( video_cmp video_cmp.cpp )
 target_link_libraries( video_cmp ${OpenCV_LIBS} )
 
+add_executable( video_codec video_codec.cpp )
+target_link_libraries( video_codec ${OpenCV_LIBS})
+
 add_executable( video_codec_dct video_codec_dct.cpp )
 target_link_libraries( video_codec_dct ${OpenCV_LIBS})

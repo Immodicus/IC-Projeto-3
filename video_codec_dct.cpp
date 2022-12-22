@@ -28,7 +28,7 @@ int main(int argc, char** argv)
     bool verbose = false;
     bool encode = true;
 
-    int32_t quality = 60;
+    int32_t quality = 90;
     uint64_t frameCount = 0;
 
     for(int n = 1; n < argc; n++)
@@ -36,6 +36,11 @@ int main(int argc, char** argv)
         if(std::string(argv[n]) == "-q") 
         {
             quality = atoi(argv[n+1]);
+            if(quality < 1 || quality > 100) 
+            {
+                std::cerr << "Bad quality value. Must be in [1 100]\n";
+                return EXIT_FAILURE;
+            }
 		}
 
         if(std::string(argv[n]) == "-d") 
@@ -66,9 +71,14 @@ int main(int argc, char** argv)
         cv::Mat Cb(desc.height / 2, desc.width / 2, CV_8UC1);
         cv::Mat Cr(desc.height / 2, desc.width / 2, CV_8UC1);
 
+        VERBOSE("Video is " << desc.width << " x " << desc.height);
+        VERBOSE("Quality is " << quality);
+
         assert(encoded.Write(desc));
         assert(encoded.Write(quality));
         assert(encoded.Write(videoFile.GetFrameCount()));
+        
+        VERBOSE("Encoding...");
 
         while(videoFile.ReadFrame(Y, Cb, Cr) != EOF)
         {  
@@ -99,6 +109,10 @@ int main(int argc, char** argv)
         cv::Mat Y(desc.height, desc.width, CV_8UC1);
         cv::Mat Cb(desc.height / 2, desc.width / 2, CV_8UC1);
         cv::Mat Cr(desc.height / 2, desc.width / 2, CV_8UC1);
+
+        VERBOSE("Video is " << desc.width << " x " << desc.height);
+        VERBOSE("Quality is " << quality);
+        VERBOSE("Decoding...");
 
         for(uint64_t f = 0; f < frameCount; f++)
         {                     

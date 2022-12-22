@@ -31,7 +31,7 @@ int main(int argc, char** argv)
         std::cerr << "     -bs : Block size in pixel (square matrix) to be used for motion compensation\n";
         std::cerr << "     -sa : Search area in pixels to be used for motion compensation\n";
         std::cerr << "     -kf : Key Frame Interval (in frames)\n";
-        std::cerr << "     -q : Number of bits samples should be quantized to. Must be between 1 and 8\n";
+        std::cerr << "     -q : Number of bits samples should be quantized to. Must be between 1 and 7\n";
         return EXIT_FAILURE;
     }
     
@@ -79,6 +79,11 @@ int main(int argc, char** argv)
         if(std::string(argv[n]) == "-q") 
         {
             nBits = atoi(argv[n+1]);
+            if(nBits < 1 || nBits > 7)
+            {
+                std::cerr << "Invalid number of quantization bits. Must be between 1 and 7\n";
+                return EXIT_FAILURE;
+            }
 		}
     }
 
@@ -107,6 +112,19 @@ int main(int argc, char** argv)
         VERBOSE("Height: " << desc.height);
 
         BitStream encoded(argv[argc - 1], "w+");
+
+        if(nBits > 0) VERBOSE("Quantizing to " << nBits << " bits");
+
+        if(intra)
+        {
+            VERBOSE("Exclusively using intra-frame encoding");
+        }
+        else
+        {
+            VERBOSE("Using intra-frame and inter-frame encoding");
+            VERBOSE("Motion Compensation blockSize is " << blockSize << " x " << blockSize);
+            VERBOSE("Motion Compensation search area is " << (int)searchArea);
+        }
 
         assert(encoded.Write(desc));
         assert(encoded.Write(nBits));

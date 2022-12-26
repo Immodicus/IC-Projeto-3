@@ -31,7 +31,8 @@ int main(int argc, char** argv)
         std::cerr << "     -bs : Block size in pixel (square matrix) to be used for motion compensation\n";
         std::cerr << "     -sa : Search area in pixels to be used for motion compensation\n";
         std::cerr << "     -kf : Key Frame Interval (in frames)\n";
-        std::cerr << "     -q : Number of bits samples should be quantized to. Must be between 1 and 7\n";
+        std::cerr << "     -q : Number of shifts residuals should be subjected to. Must be between 1 and 7\n";
+        std::cerr << "     -fq : Number of bits samples should be quantized to. Must be between 1 and 7\n";
         return EXIT_FAILURE;
     }
     
@@ -43,6 +44,7 @@ int main(int argc, char** argv)
     uchar searchArea = 8;
     uint64_t keyFrameInterval = 16;
     uint16_t nBits = 0;
+    uint16_t nSampleBits = 0;
 
     for(int n = 1; n < argc; n++)
 	{
@@ -85,6 +87,22 @@ int main(int argc, char** argv)
                 return EXIT_FAILURE;
             }
 		}
+
+        if(std::string(argv[n]) == "-fq") 
+        {
+            nSampleBits = atoi(argv[n+1]);
+            if(nSampleBits < 1 || nSampleBits > 7)
+            {
+                std::cerr << "Invalid number of quantization bits. Must be between 1 and 7\n";
+                return EXIT_FAILURE;
+            }
+		}
+    }
+
+    if(nSampleBits > 0 && nBits > 0)
+    {
+        std::cerr << "-q cannot be used in conjunction wtih -fq. Exiting\n";
+        return EXIT_FAILURE;
     }
 
     if(encode)
@@ -101,8 +119,8 @@ int main(int argc, char** argv)
 
         YUV4MPEG2::YUV4MPEG2Description desc = videoFile.Description();
 
-        if( desc.width % blockSize != 0 || desc.height % blockSize != 0 || 
-            (desc.width / 2) % blockSize != 0 || (desc.height / 2) % blockSize)
+        if(!intra &&  (desc.width % blockSize != 0 || desc.height % blockSize != 0 || 
+            (desc.width / 2) % blockSize != 0 || (desc.height / 2) % blockSize))
         {
             std::cerr << "\nVideo width, width/2, height and height/2 must be evenly divisible by blockSize. Exiting.\n";
             return EXIT_FAILURE;
@@ -128,6 +146,7 @@ int main(int argc, char** argv)
 
         assert(encoded.Write(desc));
         assert(encoded.Write(nBits));
+        assert(encoded.Write(nSampleBits));
         assert(encoded.Write(intra));
         assert(encoded.Write(blockSize));
         assert(encoded.Write(searchArea));
@@ -135,31 +154,31 @@ int main(int argc, char** argv)
         uint64_t frameCount = 0;
         while(videoFile.ReadFrame(Y, Cb, Cr) != EOF)
         {           
-            if(nBits > 0)
+            if(nSampleBits > 0)
             {
-                FrameQuantization::Quantize(Y, nBits);
-                FrameQuantization::Quantize(Cb, nBits);
-                FrameQuantization::Quantize(Cr, nBits);
+                FrameQuantization::Quantize(Y, nSampleBits);
+                FrameQuantization::Quantize(Cb, nSampleBits);
+                FrameQuantization::Quantize(Cr, nSampleBits);
             }
-            
+
             if(frameCount == 0 || intra)
             {
-                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
-                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
-                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
+                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y, nBits);
+                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb, nBits);
+                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr, nBits);
                 IntraEncoding::Write(encoded, r1);
                 IntraEncoding::Write(encoded, r2);
                 IntraEncoding::Write(encoded, r3);
             }
             else
             {
-                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y);
-                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb);
-                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr);
+                IntraEncoding::Result r1 = IntraEncoding::LumaEncode(Y, nBits);
+                IntraEncoding::Result r2 = IntraEncoding::ChromaEncode(Cb, nBits);
+                IntraEncoding::Result r3 = IntraEncoding::ChromaEncode(Cr, nBits);
 
-                MotionCompensation::Result pr1 = MotionCompensation::Encode(prevY, Y, blockSize, searchArea);
-                MotionCompensation::Result pr2 = MotionCompensation::Encode(prevCb, Cb, blockSize, searchArea);
-                MotionCompensation::Result pr3 = MotionCompensation::Encode(prevCr, Cr, blockSize, searchArea);
+                MotionCompensation::Result pr1 = MotionCompensation::Encode(prevY, Y, blockSize, searchArea, nBits);
+                MotionCompensation::Result pr2 = MotionCompensation::Encode(prevCb, Cb, blockSize, searchArea, nBits);
+                MotionCompensation::Result pr3 = MotionCompensation::Encode(prevCr, Cr, blockSize, searchArea, nBits);
 
                 int64_t interBits = INT64_MIN;
                 int64_t intraBits = INT64_MIN;
@@ -201,6 +220,7 @@ int main(int argc, char** argv)
         YUV4MPEG2::YUV4MPEG2Description desc;
         assert(encoded.Read(desc));
         assert(encoded.Read(nBits));
+        assert(encoded.Read(nSampleBits));
         assert(encoded.Read(intra));
         assert(encoded.Read(blockSize));
         assert(encoded.Read(searchArea));
@@ -225,27 +245,27 @@ int main(int argc, char** argv)
         {                     
             if(frameType == INTRA_FRAME || frameCount == 0)
             {
-                Y = IntraEncoding::LumaDecode(encoded, desc);
+                Y = IntraEncoding::LumaDecode(encoded, desc, nBits);
                 if(Y.empty()) break;
-                Cb = IntraEncoding::ChromaDecode(encoded, desc);
-                Cr = IntraEncoding::ChromaDecode(encoded, desc);
+                Cb = IntraEncoding::ChromaDecode(encoded, desc, nBits);
+                Cr = IntraEncoding::ChromaDecode(encoded, desc, nBits);
             }
             else
             {
-                if(!MotionCompensation::Decode(encoded, prevY, Y, blockSize)) break; //because of byte padding ReadBit may succeed after last frame. this won't
-                MotionCompensation::Decode(encoded, prevCb, Cb, blockSize);
-                MotionCompensation::Decode(encoded, prevCr, Cr, blockSize);
+                if(!MotionCompensation::Decode(encoded, prevY, Y, blockSize, nBits)) break; //because of byte padding ReadBit may succeed after last frame. this won't
+                MotionCompensation::Decode(encoded, prevCb, Cb, blockSize, nBits);
+                MotionCompensation::Decode(encoded, prevCr, Cr, blockSize, nBits);
             }
 
             Y.copyTo(prevY);
             Cb.copyTo(prevCb);
             Cr.copyTo(prevCr);
 
-            if(nBits > 0)
+            if(nSampleBits > 0)
             {
-                FrameQuantization::DeQuantize(Y, nBits);
-                FrameQuantization::DeQuantize(Cb, nBits);
-                FrameQuantization::DeQuantize(Cr, nBits);
+                FrameQuantization::DeQuantize(Y, nSampleBits);
+                FrameQuantization::DeQuantize(Cb, nSampleBits);
+                FrameQuantization::DeQuantize(Cr, nSampleBits);
             }
             videoFile.WriteFrame(Y, Cb, Cr);
 

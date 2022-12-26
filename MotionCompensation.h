@@ -7,6 +7,7 @@
 #include "YUV4MPEG2.h"
 #include "BitStream.h"
 #include "GolombCoder.h"
+#include "FrameQuantization.h"
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -19,20 +20,25 @@ public:
         std::vector<cv::Vec2b> motionVectors;
         std::vector<int16_t> residuals;
         uint64_t totalDiff;
+        uint16_t nBits;
+
         const uint64_t frameSize;
 
-        Result(uint64_t blockCount, uint64_t frameSize) : totalDiff(0), frameSize(frameSize)
+        Result(uint64_t blockCount, uint64_t frameSize, uint16_t nBits) : totalDiff(0), frameSize(frameSize)
         {
             residuals.resize(frameSize);
             residuals.clear();
 
             motionVectors.resize(blockCount);
             motionVectors.clear();
+
+            if(nBits == 0) this->nBits = 1;
+            else this->nBits = nBits;
         }
 
         uint64_t Estimate() const
         {
-            uint64_t m = std::ceil(totalDiff / frameSize);
+            uint64_t m = std::ceil((totalDiff / nBits) / frameSize);
             if(m == 0) m = 1;
 
             return GolombCoder::ComputeRequiredBits(residuals, m, true) + sizeof(uchar) * motionVectors.size() * 8 * 2;
@@ -40,14 +46,14 @@ public:
 
         uint64_t M() const
         {
-            uint64_t m = std::ceil(totalDiff / frameSize);
+            uint64_t m = std::ceil((totalDiff / nBits) / frameSize);
             if(m == 0) m = 1;
 
             return m;
         }
     };
     
-    static Result Encode(const cv::Mat& prevFrame, const cv::Mat& currFrame, uint64_t blockSize, char searchArea)
+    static Result Encode(const cv::Mat& prevFrame, cv::Mat& currFrame, uint64_t blockSize, char searchArea, uint16_t nBits = 0)
     {
         assert(!prevFrame.empty());
         assert(!currFrame.empty());
@@ -65,8 +71,9 @@ public:
         cv::Mat prevBlock(blockSize, blockSize, CV_8UC1);
         cv::Mat bestBlock(blockSize, blockSize, CV_8UC1);
 
-        Result result(blockCount, frameSize);
+        Result result(blockCount, frameSize, nBits);
 
+        uint64_t ptr = 0;
         for(uint64_t y = 0; y < yBlocks; y++)
         {
             for(uint64_t x = 0; x < xBlocks; x++)
@@ -95,8 +102,17 @@ public:
                     }
                 }
 
-                // std::cout << "Vec2b(" << (int32_t)minX << ", " << (int32_t)minY << "): " << min << "\n";
                 ComputeResiduals(currBlock, bestBlock, result);
+
+                if(nBits > 0)
+                {
+                    FrameQuantization::Quantize(result.residuals, nBits, ptr, blockSize);
+                    FrameQuantization::Dequantize(result.residuals, nBits, ptr, blockSize);
+                    ComputePixels(ptr, bestBlock, result.residuals, blockSize);
+                    CopyBlockToFrame(x, y, bestBlock, currFrame, blockSize);  
+                    FrameQuantization::Quantize(result.residuals, nBits, ptr-(blockSize * blockSize), blockSize);
+                }   
+
                 result.motionVectors.push_back(cv::Vec2b(minX, minY));
             }
         }
@@ -104,7 +120,7 @@ public:
         return result;
     }
 
-    static void Write(const Result& result, BitStream& bitstream)
+    static void Write(Result& result, BitStream& bitstream)
     {
         uint16_t m = result.M();
         bitstream.WriteAlign(false);
@@ -134,7 +150,7 @@ public:
         }
     }
 
-    static bool Decode(BitStream& bitstream, const cv::Mat& prevFrame, cv::Mat& currFrame, uint64_t blockSize)
+    static bool Decode(BitStream& bitstream, const cv::Mat& prevFrame, cv::Mat& currFrame, uint64_t blockSize, uint16_t nBits = 0)
     {
         assert(!prevFrame.empty());
         assert(!currFrame.empty());
@@ -153,6 +169,11 @@ public:
 
         std::vector<int64_t> residuals = Read(bitstream, motionVectors, frameSize, blockCount);
         if(residuals.size() < frameSize) return false;
+
+        if(nBits > 0)
+        {
+            FrameQuantization::Dequantize(residuals, nBits);   
+        }     
 
         cv::Mat prevBlock(blockSize, blockSize, CV_8UC1);
 
@@ -207,6 +228,17 @@ private:
     }
 
     static inline void ComputePixels(uint64_t& ptr, cv::Mat& block, const std::vector<int64_t>& residuals, uint64_t blockSize)
+    {
+        for (uint64_t row = 0; row < blockSize; row++)
+        {
+            for (uint64_t col = 0; col < blockSize; col++)
+            {
+                block.at<uchar>(row, col) -= residuals[ptr++];
+            }
+        }
+    }
+
+    static inline void ComputePixels(uint64_t& ptr, cv::Mat& block, const std::vector<int16_t>& residuals, uint64_t blockSize)
     {
         for (uint64_t row = 0; row < blockSize; row++)
         {

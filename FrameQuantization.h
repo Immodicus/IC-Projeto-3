@@ -56,4 +56,48 @@ public:
             }
         }
     }
+
+    template <typename T>
+    static void Quantize(std::vector<T>& vec, uint16_t nBits)
+    {
+        assert(nBits < 16);
+
+        for(uint64_t i = 0; i < vec.size(); i++)
+        {
+            vec[i] >>= nBits;
+        }
+    }
+    
+    template <typename T>
+    static void Quantize(std::vector<T>& vec, uint16_t nBits, uint64_t ptr, uint64_t MODE)
+    {
+        assert(nBits < 16);
+
+        for(uint64_t i = ptr; i < ptr + (MODE * MODE); i++)
+        {
+            vec[i] >>= nBits;
+        }
+    }
+
+    template <typename T>
+    static void Dequantize(std::vector<T>& vec, uint16_t nBits)
+    {
+        assert(nBits < 16);
+
+        for(uint64_t i = 0; i < vec.size(); i++)
+        {
+            vec[i] <<= nBits;
+        }
+    }
+
+    template <typename T>
+    static void Dequantize(std::vector<T>& vec, uint16_t nBits, uint64_t ptr, uint64_t MODE)
+    {
+        assert(nBits < 16);
+
+        for(uint64_t i = ptr; i < ptr + (MODE * MODE); i++)
+        {
+            vec[i] <<= nBits;
+        }
+    }
 };

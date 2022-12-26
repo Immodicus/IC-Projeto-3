@@ -245,6 +245,69 @@ public:
         return std::unique_ptr<Result>(result);
     }
 
+    static uint64_t EstimateBits(const Result* result, BitStream& bitstream)
+    {
+        int xBlocks = result->xBlocks();
+        int yBlocks = result->yBlocks();
+
+        uint64_t mSum = 0;
+
+        int64_t lastDC = 0;
+        for(int y = 0; y < yBlocks; y++)
+        {
+            for(int x = 0; x < xBlocks; x++)
+            {
+                int count = result->get(x, y).GetZigZagCount();
+                
+                uint64_t sum = 0;
+                sum += std::abs(lastDC - result->get(x, y)[0]);
+                for(int i = 1; i < count; i++)
+                {
+                    sum += std::abs(result->get(x, y)[i]);
+                }
+                sum += std::abs(count);
+                count++;
+
+                if(count == 0) count = 1;
+
+                uint64_t tmpM = std::ceil((double)sum/count);
+                if(tmpM == 0) tmpM = 1;
+
+                mSum += tmpM;
+
+                lastDC = result->get(x, y)[0];
+            }
+        }
+
+        uint64_t m = std::ceil((double)mSum / (yBlocks * xBlocks));
+
+        m = std::clamp(m, (uint64_t)1, (uint64_t)31);
+        WriteM(m, bitstream);
+
+        lastDC = 0;
+
+        uint64_t bits = 0;
+        for(int y = 0; y < yBlocks; y++)
+        {
+            for(int x = 0; x < xBlocks; x++)
+            {   
+                int count = result->get(x, y).GetZigZagCount();
+
+                bits += GolombCoder::ComputeRequiredBits(count, m, true);
+                bits += GolombCoder::ComputeRequiredBits(lastDC - result->get(x, y)[0], m, true);
+
+                for(int i = 1; i < count; i++)
+                {
+                    bits += GolombCoder::ComputeRequiredBits(result->get(x, y)[i], m, true);
+                }
+
+                lastDC = result->get(x, y)[0];
+            }
+        }
+
+        return bits;
+    }
+
     static void Write(const Result* result, BitStream& bitstream)
     {
         int xBlocks = result->xBlocks();
@@ -346,6 +409,36 @@ public:
                 CopyBlockToMat(x, y, mat, dout);
 
                 lastDC = block[0];
+            }
+        }
+    }
+
+    static void Decode(const Result& result, cv::Mat& m , int quality, MODE mode)
+    {
+        int xBlocks = result.xBlocks();
+        int yBlocks = result.yBlocks();
+
+        cv::Mat din(8, 8, CV_64FC1);
+        cv::Mat dout(8, 8, CV_64FC1);
+
+        for(int y = 0; y < yBlocks; y++)
+        {
+            for(int x = 0; x < xBlocks; x++)
+            {                
+                Result::Block block = result.get(x, y);
+
+                block.Decode();
+
+                DeQuantizeBlock(block, din, quality, mode);
+
+                cv::InputArray idctIn(din);
+                cv::OutputArray idctOut(dout);
+
+                cv::idct(idctIn, idctOut);
+
+                CopyBlockToMat(x, y, m, dout);
+
+                block.Encode();
             }
         }
     }

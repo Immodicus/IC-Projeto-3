@@ -79,6 +79,38 @@ public:
         return sum;
     }
 
+    template <typename T>
+    static int64_t ComputeRequiredBits(T e, int64_t t, bool fold)
+    {
+        uint64_t b = std::floor(log2(static_cast<double>(t)));
+
+        if (fold)
+        {
+            if (e < 0)
+                e = abs(e * 2) - 1;
+            else
+                e = abs(e * 2);
+        }
+
+        uint64_t q = abs(e) / t;
+        uint64_t r = abs(e) % t;
+
+        size_t s = q + 1;
+        if (!fold)
+            s++;
+
+        if (r < pow(2, b + 1) - t)
+        {
+            s += b;
+        }
+        else
+        {
+            s += (b + 1);
+        }
+
+        return s;
+    }
+
     template<typename T>
     static int64_t EstimateM(const std::vector<T>& v, int64_t range, int64_t div, bool fold = false)
     {

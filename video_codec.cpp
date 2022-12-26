@@ -36,7 +36,7 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     
-    bool verbose = true;
+    bool verbose = false;
     bool encode = true;
     bool intra = false;
 

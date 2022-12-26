@@ -21,4 +21,73 @@ jobs:
         cd build
         cmake ..
         make
+        
+  test:
+    needs: build
+    runs-on: ubuntu-latest
 
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download sample videos
+        run:  |
+          sudo apt install -y libopencv-dev
+          mkdir build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          make
+          wget https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          wget https://media.xiph.org/video/derf/y4m/bowing_cif.y4m
+          wget https://media.xiph.org/video/derf/y4m/carphone_qcif.y4m
+          wget https://media.xiph.org/video/derf/y4m/city_4cif.y4m
+          
+      - name: Test Lossless
+        run:  |
+          cd build
+          echo -e "\033[31mTesting Lossless akiyo_cif.y4m"
+          ./video_codec akiyo_cif.y4m akiyo_encoded_ls
+          ./video_codec -d akiyo_encoded_ls akiyo_decoded_ls.y4m
+          diff -s akiyo_cif.y4m akiyo_decoded_ls.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless akiyo_cif.y4m (Intra encoding only)"
+          ./video_codec -i akiyo_cif.y4m akiyo_encoded_ls_i
+          ./video_codec -d akiyo_encoded_ls_i akiyo_decoded_ls_i.y4m
+          diff -s akiyo_cif.y4m akiyo_decoded_ls_i.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless bowing_cif.y4m"
+          ./video_codec bowing_cif.y4m bowing_encoded_ls
+          ./video_codec -d bowing_encoded_ls bowing_decoded_ls.y4m
+          diff -s bowing_cif.y4m bowing_decoded_ls.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless bowing_cif.y4m (Intra encoding only)"
+          ./video_codec -i bowing_cif.y4m bowing_encoded_ls_i
+          ./video_codec -d bowing_encoded_ls_i bowing_decoded_ls_i.y4m
+          diff -s bowing_cif.y4m bowing_decoded_ls_i.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless carphone_qcif.y4m"
+          ./video_codec -bs 8 carphone_qcif.y4m carphone_encoded_ls
+          ./video_codec -d carphone_encoded_ls carphone_decoded_ls.y4m
+          diff -s carphone_qcif.y4m carphone_decoded_ls.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless carphone_qcif.y4m (Intra encoding only)"
+          ./video_codec -bs 8 -i carphone_qcif.y4m carphone_encoded_ls_i
+          ./video_codec -d carphone_encoded_ls_i carphone_decoded_ls_i.y4m
+          diff -s carphone_qcif.y4m carphone_decoded_ls_i.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless city_4cif.y4m"
+          ./video_codec city_4cif.y4m city_encoded_ls
+          ./video_codec -d city_encoded_ls city_decoded_ls.y4m
+          diff -s city_4cif.y4m city_decoded_ls.y4m
+          echo -e "\033[32m------------------------------------------"
+          
+          echo -e "\033[31mTesting Lossless city_4cif.y4m (Intra encoding only)"
+          ./video_codec -i city_4cif.y4m city_encoded_ls_i
+          ./video_codec -d city_encoded_ls_i city_decoded_ls_i.y4m
+          diff -s city_4cif.y4m city_decoded_ls_i.y4m
+          echo -e "\033[32m------------------------------------------"

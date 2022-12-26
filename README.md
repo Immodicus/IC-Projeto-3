@@ -1,6 +1,6 @@
 # Information and codification (IC) - Project 3
 
----
+[![Build Linux](https://github.com/Immodicus/IC-Projeto-3/actions/workflows/build-linux.yml/badge.svg?branch=master)](https://github.com/Immodicus/IC-Projeto-3/actions/workflows/build-linux.yml)
 
 ## Group members - G11
 
@@ -15,7 +15,7 @@
 - git clone git@github.com:Immodicus/IC-Projeto-3.git
 - cd IC-Projeto-3
 - mkdir build && cd build
-- cmake ..
+- cmake -DCMAKE_BUILD_TYPE=Release ..
 - make
 
 ## Testing:

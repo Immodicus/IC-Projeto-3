@@ -35,7 +35,7 @@ public:
             uint64_t m = std::ceil(totalDiff / frameSize);
             if(m == 0) m = 1;
 
-            return GolombCoder::ComputeRequiredBits(residuals, m, false) + sizeof(uchar) * motionVectors.size() * 8 * 2;
+            return GolombCoder::ComputeRequiredBits(residuals, m, true) + sizeof(uchar) * motionVectors.size() * 8 * 2;
         }
 
         uint64_t M() const
@@ -47,7 +47,7 @@ public:
         }
     };
     
-    static Result Encode(const cv::Mat& prevFrame, const cv::Mat& currFrame, uint64_t blockSize, uchar searchArea)
+    static Result Encode(const cv::Mat& prevFrame, const cv::Mat& currFrame, uint64_t blockSize, char searchArea)
     {
         assert(!prevFrame.empty());
         assert(!currFrame.empty());
@@ -74,11 +74,11 @@ public:
                 GetBlock(x, y, 0, 0, currFrame, currBlock, blockSize);
 
                 uint64_t min = UINT64_MAX;
-                uchar minX = 0, minY = 0;
+                char minX = 0, minY = 0;
 
-                for(uchar xOffset = 0; xOffset < searchArea; xOffset++)
+                for(char xOffset = -searchArea; xOffset < searchArea; xOffset++)
                 {
-                    for(uchar yOffset = 0; yOffset < searchArea; yOffset++)
+                    for(char yOffset = -searchArea; yOffset < searchArea; yOffset++)
                     {
                         if(GetBlock(x, y, xOffset, yOffset, prevFrame, prevBlock, blockSize))
                         {
@@ -110,18 +110,27 @@ public:
         bitstream.WriteAlign(false);
         bitstream.Write(m);
 
+        uint64_t sum = 0;
+
         for(const auto& motVec : result.motionVectors)
         {
-            uchar x = motVec[0];
-            uchar y = motVec[1];
+            sum += motVec[0];
+            sum += motVec[1];
+        }
 
-            bitstream.Write(x);
-            bitstream.Write(y);
+        uint16_t m2 = std::ceil((double)sum / (result.motionVectors.size() * 2));
+        if(m2 == 0) m2 = 1;
+        bitstream.Write(m2);
+
+        for(const auto& motVec : result.motionVectors)
+        {
+            bitstream.WriteNBits(GolombCoder::EncodeFold(motVec[0], m2));
+            bitstream.WriteNBits(GolombCoder::EncodeFold(motVec[1], m2));
         }
 
         for(uint64_t r = 0; r < result.frameSize; r++)
         {
-            bitstream.WriteNBits(GolombCoder::Encode(result.residuals[r], m));
+            bitstream.WriteNBits(GolombCoder::EncodeFold(result.residuals[r], m));
         }
     }
 
@@ -168,21 +177,22 @@ public:
 private:
     static std::vector<int64_t> Read(BitStream& bitstream, std::vector<cv::Vec2b>& motionVectors, uint64_t frameSize, uint64_t blockCount)
     {
-        uint16_t m = 1;
+        uint16_t m = 1, m2 = 1;
         bitstream.ReadAlign();
         bitstream.Read(m);
+        bitstream.Read(m2);
 
         for(uint64_t v = 0; v < blockCount; v++)
         {
             uchar x = 0, y = 0;
 
-            bitstream.Read(x);
-            bitstream.Read(y);
+            x = GolombCoder::DecodeOneFold(bitstream, m2);
+            y = GolombCoder::DecodeOneFold(bitstream, m2);
 
             motionVectors.push_back(cv::Vec2b(x, y));
         }
 
-        return GolombCoder::Decode(bitstream, m, frameSize);
+        return GolombCoder::DecodeFold(bitstream, m, frameSize);
     }
     
     static inline void CopyBlockToFrame(uint64_t x, uint64_t y, const cv::Mat& block, cv::Mat& frame, uint64_t blockSize)
@@ -209,7 +219,7 @@ private:
 
     // returns true on success
     // false if block goes outside of frame boundries
-    static inline bool GetBlock(uint64_t x, uint64_t y, uchar xOffset, uchar yOffset, const cv::Mat& frame, cv::Mat& block, uint64_t blockSize)
+    static inline bool GetBlock(uint64_t x, uint64_t y, char xOffset, char yOffset, const cv::Mat& frame, cv::Mat& block, uint64_t blockSize)
     {
         const int64_t maxHeight = frame.rows;
         const int64_t maxWidth = frame.cols;

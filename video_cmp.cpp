@@ -39,6 +39,8 @@ int main(int argc, char** argv)
     // Set std::cout fp precision
     std::cout << std::fixed << std::setprecision(6);
 
+    double average = 0.0;
+
     uint64_t frameId = 0;
     while (true)
     {
@@ -72,9 +74,12 @@ int main(int argc, char** argv)
 
         double psnr = 10 * log10( std::pow(255, 2) / meanSquaredError );
 
+        average += psnr;
+
         std::cout << "Frame " << std::setw(4) << frameId++ << " PSNR: " << psnr << " (dB)\n";
     }
-    
 
+    std::cout << "Average PSNR is " << average / nFrames << " (dB)\n";
+    
     return EXIT_SUCCESS;
 }

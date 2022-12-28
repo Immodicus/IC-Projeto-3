@@ -131,6 +131,7 @@ int main(int argc, char** argv)
         assert(encoded.Write(intra));
         assert(encoded.Write(blockSize));
         assert(encoded.Write(searchArea));
+        assert(encoded.Write(keyFrameInterval));
         
         VERBOSE("Encoding...");
 
@@ -190,6 +191,7 @@ int main(int argc, char** argv)
         assert(encoded.Read(intra));
         assert(encoded.Read(blockSize));
         assert(encoded.Read(searchArea));
+        assert(encoded.Read(keyFrameInterval));
 
         YUV4MPEG2 videoFile(argv[argc - 1], desc);
 
